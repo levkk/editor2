@@ -116,6 +116,7 @@ pub struct Renderer {
     device: Device,
     queue: Queue,
     pipelines: Vec<Pipeline>,
+    config: SurfaceConfiguration,
 
     /// The window reference.
     /// Make sure this is last so it gets dropped after the surface
@@ -171,6 +172,7 @@ impl Renderer {
             device,
             queue,
             pipelines: vec![pipeline],
+            config,
         }
     }
 
@@ -180,9 +182,8 @@ impl Renderer {
 
     pub fn resize(&self, size: PhysicalSize<u32>) {
         let mut config = self
-            .surface
-            .get_default_config(&self.adapter, size.width, size.height)
-            .expect("winit config");
+            .config
+            .clone();
         config.width = size.width.max(1);
         config.height = size.height.max(1);
 

@@ -33,8 +33,8 @@ impl ApplicationHandler for App {
             WindowEvent::KeyboardInput { event, .. } => {
                 debug!("{:?}", event);
             }
-            WindowEvent::CursorMoved { position, .. } => {
-                debug!("{:?}", position);
+            WindowEvent::CursorMoved { position: _, .. } => {
+                // debug!("{:?}", position);
             }
             WindowEvent::MouseWheel { delta: _, .. } => {}
             WindowEvent::Resized(size) => {
@@ -42,8 +42,8 @@ impl ApplicationHandler for App {
                     renderer.resize(size);
                 }
             }
-            WindowEvent::RedrawRequested => self.renderer.as_ref().expect("winit").draw(),
-            _ => (),
+            WindowEvent::RedrawRequested | WindowEvent::Moved(_) => self.renderer.as_ref().expect("winit").draw(),
+            event => println!("{:?}", event),
         }
     }
 }

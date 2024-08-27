@@ -4,6 +4,41 @@ use winit::{dpi::PhysicalSize, window::Window};
 
 use std::sync::Arc;
 
+#[repr(C)]
+#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct Vertex {
+    point: [f32; 3],
+    color: [f32; 3],
+}
+
+impl Vertex {
+    pub fn new(x: f32, y: f32) -> Self {
+        Self {
+            point: [x, y, 1.0],
+            color: [1.0, 0.0, 0.0],
+        }
+    }
+
+    fn buffer_layout() -> wgpu::VertexBufferLayout<'static> {
+        VertexBufferLayout {
+            array_stride: std::mem::size_of::<Self>() as BufferAddress,
+            step_mode: VertexStepMode::Vertex,
+            attributes: &[
+                VertexAttribute {
+                    offset: 0,
+                    shader_location: 0,
+                    format: VertexFormat::Float32x3,
+                },
+                VertexAttribute {
+                    offset: std::mem::size_of::<[f32; 3]>() as BufferAddress,
+                    shader_location: 1,
+                    format: VertexFormat::Float32x3,
+                },
+            ],
+        }
+    }
+}
+
 struct Pipeline {
     pipeline: RenderPipeline,
     shader: ShaderModule,
@@ -19,16 +54,39 @@ impl Pipeline {
     fn color(device: &Device, format: TextureFormat) -> Self {
         let shader = device.create_shader_module(include_wgsl!("color.wgsl"));
 
-        Self::new(device, shader, format)
-    }
-
-    fn new(device: &Device, shader: ShaderModule, format: TextureFormat) -> Self {
         let pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
             layout: Some(&device.create_pipeline_layout(&PipelineLayoutDescriptor::default())),
             vertex: VertexState {
                 module: &shader,
                 entry_point: "vs_main",
                 buffers: &[],
+                compilation_options: Default::default(),
+            },
+            fragment: Some(FragmentState {
+                module: &shader,
+                entry_point: "fs_main",
+                targets: &[Some(format.into())],
+                compilation_options: Default::default(),
+            }),
+            label: None,
+            primitive: PrimitiveState::default(),
+            depth_stencil: None,
+            multisample: MultisampleState::default(),
+            multiview: None,
+            cache: None,
+        });
+
+        Self { shader, pipeline }
+    }
+
+    fn base(device: &Device, format: TextureFormat) -> Self {
+        let shader = device.create_shader_module(include_wgsl!("base.wgsl"));
+        let pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
+            layout: Some(&device.create_pipeline_layout(&PipelineLayoutDescriptor::default())),
+            vertex: VertexState {
+                module: &shader,
+                entry_point: "vs_main",
+                buffers: &[Vertex::buffer_layout()],
                 compilation_options: Default::default(),
             },
             fragment: Some(FragmentState {
@@ -103,6 +161,7 @@ impl Renderer {
         let format = capabilities.formats.get(0).expect("swapchain_format");
 
         let pipeline = Pipeline::color(&device, format.clone());
+        let _base = Pipeline::base(&device, format.clone());
 
         Self {
             surface,

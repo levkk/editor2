@@ -1,6 +1,8 @@
 use pollster::FutureExt;
 use wgpu::*;
-use winit::window::Window;
+use winit::{dpi::PhysicalSize, window::Window};
+
+use std::sync::Arc;
 
 struct Pipeline {
     pipeline: RenderPipeline,
@@ -48,9 +50,9 @@ impl Pipeline {
 }
 
 /// Render global state.
-pub struct Renderer<'window> {
+pub struct Renderer {
     /// Rendering surface.
-    surface: Surface<'window>,
+    surface: Surface<'static>,
     instance: Instance,
     adapter: Adapter,
     device: Device,
@@ -60,11 +62,12 @@ pub struct Renderer<'window> {
     /// The window reference.
     /// Make sure this is last so it gets dropped after the surface
     /// reference is.
-    window: &'window Window,
+    window: Arc<Window>,
 }
 
-impl<'window> Renderer<'window> {
-    pub fn new(window: &'window Window) -> Self {
+impl Renderer {
+    pub fn new(window: Window) -> Self {
+        let window = Arc::new(window);
         let size = window.inner_size();
 
         let instance = Instance::new(InstanceDescriptor {
@@ -72,7 +75,9 @@ impl<'window> Renderer<'window> {
             ..Default::default()
         });
 
-        let surface = instance.create_surface(window).expect("wgpu surface");
+        let surface = instance
+            .create_surface(window.clone())
+            .expect("wgpu surface");
 
         let adapter = instance
             .request_adapter(&RequestAdapterOptions {
@@ -112,6 +117,18 @@ impl<'window> Renderer<'window> {
 
     pub fn window(&self) -> &Window {
         &self.window
+    }
+
+    pub fn resize(&self, size: PhysicalSize<u32>) {
+        let mut config = self
+            .surface
+            .get_default_config(&self.adapter, size.width, size.height)
+            .expect("winit config");
+        config.width = size.width.max(1);
+        config.height = size.height.max(1);
+
+        self.surface.configure(&self.device, &config);
+        self.window.request_redraw();
     }
 
     pub fn draw(&self) {

@@ -4,7 +4,10 @@ use wgpu::*;
 use winit::{dpi::PhysicalSize, window::Window};
 
 use std::marker::PhantomData;
-use std::sync::Arc;
+use std::sync::{
+    atomic::{AtomicUsize, Ordering},
+    Arc,
+};
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
@@ -46,9 +49,32 @@ impl Vertex {
     }
 }
 
+struct BufferUsage {
+    vertex: AtomicUsize,
+    index: AtomicUsize,
+}
+
+impl BufferUsage {
+    pub fn new() -> Self {
+        BufferUsage {
+            vertex: AtomicUsize::new(0),
+            index: AtomicUsize::new(0),
+        }
+    }
+
+    pub fn vertex(&self) -> usize {
+        self.vertex.load(Ordering::Relaxed)
+    }
+
+    pub fn index(&self) -> usize {
+        self.index.load(Ordering::Relaxed)
+    }
+}
+
 struct Buffers<T> {
     vertex: Buffer,
     index: Buffer,
+    usage: Arc<BufferUsage>,
     _element: PhantomData<T>,
 }
 
@@ -78,33 +104,23 @@ impl<T> Buffers<T> {
         Buffers {
             vertex,
             index,
+            usage: Arc::new(BufferUsage::new()),
             _element: PhantomData,
         }
     }
 
     pub fn buffer_vertex(&self, queue: &Queue, data: &[Vertex]) {
-        // self.vertex.slice(..).map_async(MapMode::Write, |result| {
-        //     if result.is_ok() {
-
-        //     }
-        // });
-        self
-            .vertex
-            .slice(..)
-            .get_mapped_range_mut()
-            [..data.len() * std::mem::size_of::<Vertex>()]
+        self.vertex.slice(..).get_mapped_range_mut()[..data.len() * std::mem::size_of::<Vertex>()]
             .copy_from_slice(bytemuck::cast_slice(data));
         self.vertex.unmap();
+        self.usage.vertex.store(data.len(), Ordering::Relaxed);
     }
 
     pub fn buffer_index(&self, queue: &Queue, data: &[u16]) {
-        self
-            .index
-            .slice(..)
-            .get_mapped_range_mut()
-            [..data.len() * std::mem::size_of::<u16>()]
+        self.index.slice(..).get_mapped_range_mut()[..data.len() * std::mem::size_of::<u16>()]
             .copy_from_slice(bytemuck::cast_slice(data));
         self.index.unmap();
+        self.usage.index.store(data.len(), Ordering::Relaxed);
     }
 
     pub fn vertex(&self) -> &Buffer {
@@ -113,6 +129,10 @@ impl<T> Buffers<T> {
 
     pub fn index(&self) -> &Buffer {
         &self.index
+    }
+
+    pub fn usage(&self) -> &BufferUsage {
+        &self.usage
     }
 
     pub fn flush(&self, queue: &Queue) {
@@ -201,6 +221,14 @@ impl Pipeline {
             buffers: Some(Buffers::new(device, 3, 6)),
         }
     }
+
+    pub fn draw(&self, rpass: &mut RenderPass) {
+        let pipeline = &self.pipeline;
+        rpass.set_pipeline(pipeline);
+        rpass.set_index_buffer(self.buffers().index().slice(..), IndexFormat::Uint16);
+        rpass.set_vertex_buffer(0, self.buffers().vertex().slice(..));
+        rpass.draw_indexed(0..self.buffers().usage().index() as u32, 0, 0..1);
+    }
 }
 
 /// Render global state.
@@ -267,16 +295,13 @@ impl Renderer {
                 Vertex::new(-1., 0.5).color(1.0, 0.0, 0.0),
                 Vertex::new(-0.5, 0.5).color(0.0, 1.0, 0.0),
                 Vertex::new(-0.75, 1.0).color(0.0, 0.0, 1.0),
-
                 Vertex::new(1., 0.5).color(1.0, 0.0, 0.0),
                 Vertex::new(0.5, 0.5).color(0.0, 1.0, 0.0),
                 Vertex::new(0.75, 1.0).color(0.0, 0.0, 1.0),
             ],
         );
 
-        base.buffers().buffer_index(&queue,
-            &[0, 1, 2, 3, 4, 5],
-        );
+        base.buffers().buffer_index(&queue, &[0, 1, 2, 3, 4, 5]);
 
         base.buffers().flush(&queue);
 
@@ -324,12 +349,14 @@ impl Renderer {
                 timestamp_writes: None,
             });
 
-            let pipeline = &self.pipelines[1];
-            let pipe = pipeline.pipeline();
-            rpass.set_pipeline(pipe);
-            rpass.set_index_buffer(pipeline.buffers().index().slice(..), IndexFormat::Uint16);
-            rpass.set_vertex_buffer(0, pipeline.buffers().vertex().slice(..));
-            rpass.draw_indexed(0..6, 0, 0..1);
+            self.pipelines[1].draw(&mut rpass);
+
+            // let pipeline = &self.pipelines[1];
+            // let pipe = pipeline.pipeline();
+            // rpass.set_pipeline(pipe);
+            // rpass.set_index_buffer(pipeline.buffers().index().slice(..), IndexFormat::Uint16);
+            // rpass.set_vertex_buffer(0, pipeline.buffers().vertex().slice(..));
+            // rpass.draw_indexed(0..6, 0, 0..1);
             // rpass.draw(0..6, 0..1);
         }
 

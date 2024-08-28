@@ -10,15 +10,20 @@ use std::sync::Arc;
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct Vertex {
     point: [f32; 3],
-    // color: [f32; 3],
+    color: [f32; 3],
 }
 
 impl Vertex {
     pub fn new(x: f32, y: f32) -> Self {
         Self {
             point: [x, y, 0.0],
-            // color: [1.0, 0.0, 0.0],
+            color: [1.0, 1.0, 0.0],
         }
+    }
+
+    pub fn color(mut self, r: f32, g: f32, b: f32) -> Self {
+        self.color = [r, g, b];
+        self
     }
 
     fn buffer_layout() -> wgpu::VertexBufferLayout<'static> {
@@ -31,11 +36,11 @@ impl Vertex {
                     shader_location: 0,
                     format: VertexFormat::Float32x3,
                 },
-                // VertexAttribute {
-                //     offset: std::mem::size_of::<[f32; 3]>() as BufferAddress,
-                //     shader_location: 1,
-                //     format: VertexFormat::Float32x3,
-                // },
+                VertexAttribute {
+                    offset: std::mem::size_of::<[f32; 3]>() as BufferAddress,
+                    shader_location: 1,
+                    format: VertexFormat::Float32x3,
+                },
             ],
         }
     }
@@ -52,7 +57,6 @@ impl<T> Buffers<T> {
         let mask = COPY_BUFFER_ALIGNMENT - 1;
 
         // Vertex buffer.
-
         let vertex = device.create_buffer(&BufferDescriptor {
             label: Some("base vertex"),
             size: elements as u64 * std::mem::size_of::<Self>() as u64,
@@ -84,11 +88,23 @@ impl<T> Buffers<T> {
 
         //     }
         // });
-        queue.write_buffer(&self.vertex, 0, bytemuck::cast_slice(data));
+        self
+            .vertex
+            .slice(..)
+            .get_mapped_range_mut()
+            [..data.len() * std::mem::size_of::<Vertex>()]
+            .copy_from_slice(bytemuck::cast_slice(data));
+        self.vertex.unmap();
     }
 
     pub fn buffer_index(&self, queue: &Queue, data: &[u16]) {
-        queue.write_buffer(&self.index, 0, bytemuck::cast_slice(data));
+        self
+            .index
+            .slice(..)
+            .get_mapped_range_mut()
+            [..data.len() * std::mem::size_of::<u16>()]
+            .copy_from_slice(bytemuck::cast_slice(data));
+        self.index.unmap();
     }
 
     pub fn vertex(&self) -> &Buffer {
@@ -100,9 +116,9 @@ impl<T> Buffers<T> {
     }
 
     pub fn flush(&self, queue: &Queue) {
-        queue.submit([]);
-        self.vertex.unmap();
-        self.index.unmap();
+        // queue.submit([]);
+        // self.vertex.unmap();
+        // self.index.unmap();
     }
 }
 
@@ -248,15 +264,19 @@ impl Renderer {
         base.buffers().buffer_vertex(
             &queue,
             &[
-                Vertex::new(-1.0, -1.0),
-                Vertex::new(0., 0.),
-                Vertex::new(1., 1.),
+                Vertex::new(-1., 0.5).color(1.0, 0.0, 0.0),
+                Vertex::new(-0.5, 0.5).color(0.0, 1.0, 0.0),
+                Vertex::new(-0.75, 1.0).color(0.0, 0.0, 1.0),
+
+                Vertex::new(1., 0.5).color(1.0, 0.0, 0.0),
+                Vertex::new(0.5, 0.5).color(0.0, 1.0, 0.0),
+                Vertex::new(0.75, 1.0).color(0.0, 0.0, 1.0),
             ],
         );
 
-        // base.buffers().buffer_index(&queue,
-        //     &[0, 1, 2, 0, 1, 2],
-        // );
+        base.buffers().buffer_index(&queue,
+            &[0, 1, 2, 3, 4, 5],
+        );
 
         base.buffers().flush(&queue);
 
@@ -307,10 +327,10 @@ impl Renderer {
             let pipeline = &self.pipelines[1];
             let pipe = pipeline.pipeline();
             rpass.set_pipeline(pipe);
-            // rpass.set_index_buffer(pipeline.buffers().index().slice(..), IndexFormat::Uint16);
+            rpass.set_index_buffer(pipeline.buffers().index().slice(..), IndexFormat::Uint16);
             rpass.set_vertex_buffer(0, pipeline.buffers().vertex().slice(..));
-            // rpass.draw_indexed(0..3, 0, 0..1);
-            rpass.draw(0..3, 0..1);
+            rpass.draw_indexed(0..6, 0, 0..1);
+            // rpass.draw(0..6, 0..1);
         }
 
         self.queue.submit(Some(encoder.finish()));

@@ -42,7 +42,9 @@ impl ApplicationHandler for App {
                     renderer.resize(size);
                 }
             }
-            WindowEvent::RedrawRequested | WindowEvent::Moved(_) => self.renderer.as_ref().expect("winit").draw(),
+            WindowEvent::RedrawRequested | WindowEvent::Moved(_) => {
+                self.renderer.as_ref().expect("winit").draw()
+            }
             event => println!("{:?}", event),
         }
     }

@@ -87,7 +87,7 @@ impl<T> Buffers<T> {
             label: Some("base vertex"),
             size: elements as u64 * std::mem::size_of::<Self>() as u64,
             usage: BufferUsages::VERTEX | BufferUsages::COPY_DST,
-            mapped_at_creation: true,
+            mapped_at_creation: false,
         });
 
         // Index buffer.
@@ -98,7 +98,7 @@ impl<T> Buffers<T> {
             label: Some("base index"),
             size,
             usage: BufferUsages::INDEX | BufferUsages::COPY_DST,
-            mapped_at_creation: true,
+            mapped_at_creation: false,
         });
 
         Buffers {
@@ -110,16 +110,19 @@ impl<T> Buffers<T> {
     }
 
     pub fn buffer_vertex(&self, queue: &Queue, data: &[Vertex]) {
-        self.vertex.slice(..).get_mapped_range_mut()[..data.len() * std::mem::size_of::<Vertex>()]
-            .copy_from_slice(bytemuck::cast_slice(data));
-        self.vertex.unmap();
+        queue.write_buffer(&self.vertex, 0, bytemuck::cast_slice(data));
+        // self.vertex.slice(..).get_mapped_range_mut()[..data.len() * std::mem::size_of::<Vertex>()]
+        //     .copy_from_slice(bytemuck::cast_slice(data));
+        // self.vertex.unmap();
         self.usage.vertex.store(data.len(), Ordering::Relaxed);
     }
 
     pub fn buffer_index(&self, queue: &Queue, data: &[u16]) {
-        self.index.slice(..).get_mapped_range_mut()[..data.len() * std::mem::size_of::<u16>()]
-            .copy_from_slice(bytemuck::cast_slice(data));
-        self.index.unmap();
+        queue.write_buffer(&self.index, 0, bytemuck::cast_slice(data));
+        // // queue.submit([]);
+        // self.index.slice(..).get_mapped_range_mut()[..data.len() * std::mem::size_of::<u16>()]
+        //     .copy_from_slice(bytemuck::cast_slice(data));
+        // self.index.unmap();
         self.usage.index.store(data.len(), Ordering::Relaxed);
     }
 
@@ -135,10 +138,26 @@ impl<T> Buffers<T> {
         &self.usage
     }
 
+    pub fn map(&self, queue: &Queue) {
+        let (tx_vertex, rx_vertex) = flume::bounded(1);
+        let (tx_index, rx_index) = flume::bounded(1);
+
+        self.vertex.slice(..).map_async(MapMode::Write, move |r| {
+            let _ = tx_vertex.send(r);
+        });
+        self.index.slice(..).map_async(MapMode::Write, move |r| {
+            let _ = tx_index.send(r);
+        });
+
+        queue.submit([]);
+
+        rx_vertex.recv().unwrap().unwrap();
+        rx_index.recv().unwrap().unwrap();
+    }
+
     pub fn flush(&self, queue: &Queue) {
-        // queue.submit([]);
-        // self.vertex.unmap();
-        // self.index.unmap();
+        self.vertex.unmap();
+        self.index.unmap();
     }
 }
 
@@ -289,21 +308,44 @@ impl Renderer {
         let pipeline = Pipeline::color(&device, format.clone());
         let base = Pipeline::base(&device, format.clone());
 
+        // base.buffers().map(&queue);
+
         base.buffers().buffer_vertex(
             &queue,
             &[
-                Vertex::new(-1., 0.5).color(1.0, 0.0, 0.0),
-                Vertex::new(-0.5, 0.5).color(0.0, 1.0, 0.0),
-                Vertex::new(-0.75, 1.0).color(0.0, 0.0, 1.0),
-                Vertex::new(1., 0.5).color(1.0, 0.0, 0.0),
-                Vertex::new(0.5, 0.5).color(0.0, 1.0, 0.0),
-                Vertex::new(0.75, 1.0).color(0.0, 0.0, 1.0),
+                Vertex::new(0.5, 0.5).color(1.0, 0.0, 0.0),
+                Vertex::new(0.5, -0.5).color(1.0, 0.0, 0.0),
+                Vertex::new(-0.5, -0.5).color(1.0, 0.0, 0.0),
+                Vertex::new(-0.5, 0.5).color(1.0, 0.0, 0.0),
+                // Vertex::new(-1., 0.5).color(1.0, 0.0, 0.0),
+                // Vertex::new(-0.5, 0.5).color(0.0, 1.0, 0.0),
+                // Vertex::new(-0.75, 1.0).color(0.0, 0.0, 1.0),
+                // Vertex::new(1., 0.5).color(1.0, 0.0, 0.0),
+                // Vertex::new(0.5, 0.5).color(0.0, 1.0, 0.0),
+                // Vertex::new(0.75, 1.0).color(0.0, 0.0, 1.0),
             ],
         );
 
-        base.buffers().buffer_index(&queue, &[0, 1, 2, 3, 4, 5]);
+        base.buffers().buffer_vertex(
+            &queue,
+            &[
+                Vertex::new(0.5, 0.5).color(1.0, 1.0, 0.0),
+                Vertex::new(0.5, -0.5).color(1.0, 0.0, 0.0),
+                Vertex::new(-0.5, -0.5).color(1.0, 0.0, 0.0),
+                Vertex::new(-0.5, 0.5).color(1.0, 0.0, 0.0),
+                // Vertex::new(-1., 0.5).color(1.0, 0.0, 0.0),
+                // Vertex::new(-0.5, 0.5).color(0.0, 1.0, 0.0),
+                // Vertex::new(-0.75, 1.0).color(0.0, 0.0, 1.0),
+                // Vertex::new(1., 0.5).color(1.0, 0.0, 0.0),
+                // Vertex::new(0.5, 0.5).color(0.0, 1.0, 0.0),
+                // Vertex::new(0.75, 1.0).color(0.0, 0.0, 1.0),
+            ],
+        );
 
-        base.buffers().flush(&queue);
+        base.buffers().buffer_index(&queue, &[0, 1, 2, 2, 3, 0]);
+
+        // base.buffers().map(&queue);
+        // base.buffers().flush(&queue);
 
         Self {
             surface,
@@ -350,14 +392,6 @@ impl Renderer {
             });
 
             self.pipelines[1].draw(&mut rpass);
-
-            // let pipeline = &self.pipelines[1];
-            // let pipe = pipeline.pipeline();
-            // rpass.set_pipeline(pipe);
-            // rpass.set_index_buffer(pipeline.buffers().index().slice(..), IndexFormat::Uint16);
-            // rpass.set_vertex_buffer(0, pipeline.buffers().vertex().slice(..));
-            // rpass.draw_indexed(0..6, 0, 0..1);
-            // rpass.draw(0..6, 0..1);
         }
 
         self.queue.submit(Some(encoder.finish()));

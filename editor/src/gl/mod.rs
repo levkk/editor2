@@ -9,6 +9,9 @@ use std::sync::{
     Arc,
 };
 
+pub mod font;
+pub mod figures;
+
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct Vertex {
@@ -110,20 +113,16 @@ impl<T> Buffers<T> {
     }
 
     pub fn buffer_vertex(&self, queue: &Queue, data: &[Vertex]) {
-        queue.write_buffer(&self.vertex, 0, bytemuck::cast_slice(data));
-        // self.vertex.slice(..).get_mapped_range_mut()[..data.len() * std::mem::size_of::<Vertex>()]
-        //     .copy_from_slice(bytemuck::cast_slice(data));
-        // self.vertex.unmap();
-        self.usage.vertex.store(data.len(), Ordering::Relaxed);
+        let start = self.usage.vertex.fetch_add(data.len(), Ordering::Relaxed) as u64;
+        println!("start: {}", start);
+        queue.write_buffer(&self.vertex, start, bytemuck::cast_slice(data));
     }
 
     pub fn buffer_index(&self, queue: &Queue, data: &[u16]) {
-        queue.write_buffer(&self.index, 0, bytemuck::cast_slice(data));
-        // // queue.submit([]);
-        // self.index.slice(..).get_mapped_range_mut()[..data.len() * std::mem::size_of::<u16>()]
-        //     .copy_from_slice(bytemuck::cast_slice(data));
-        // self.index.unmap();
-        self.usage.index.store(data.len(), Ordering::Relaxed);
+        let start = self.usage.index.fetch_add(data.len(), Ordering::Relaxed) as u64;
+        println!("start: {}", start);
+        let data = data.iter().map(|d| d + start as u16).collect::<Vec<u16>>();
+        queue.write_buffer(&self.index, start, bytemuck::cast_slice(&data));
     }
 
     pub fn vertex(&self) -> &Buffer {
@@ -136,28 +135,6 @@ impl<T> Buffers<T> {
 
     pub fn usage(&self) -> &BufferUsage {
         &self.usage
-    }
-
-    pub fn map(&self, queue: &Queue) {
-        let (tx_vertex, rx_vertex) = flume::bounded(1);
-        let (tx_index, rx_index) = flume::bounded(1);
-
-        self.vertex.slice(..).map_async(MapMode::Write, move |r| {
-            let _ = tx_vertex.send(r);
-        });
-        self.index.slice(..).map_async(MapMode::Write, move |r| {
-            let _ = tx_index.send(r);
-        });
-
-        queue.submit([]);
-
-        rx_vertex.recv().unwrap().unwrap();
-        rx_index.recv().unwrap().unwrap();
-    }
-
-    pub fn flush(&self, queue: &Queue) {
-        self.vertex.unmap();
-        self.index.unmap();
     }
 }
 
@@ -309,40 +286,38 @@ impl Renderer {
         let base = Pipeline::base(&device, format.clone());
 
         // base.buffers().map(&queue);
+        let square = figures::Square::new(0.5, -0.134, 0.5);
 
         base.buffers().buffer_vertex(
             &queue,
-            &[
-                Vertex::new(0.5, 0.5).color(1.0, 0.0, 0.0),
-                Vertex::new(0.5, -0.5).color(1.0, 0.0, 0.0),
-                Vertex::new(-0.5, -0.5).color(1.0, 0.0, 0.0),
-                Vertex::new(-0.5, 0.5).color(1.0, 0.0, 0.0),
-                // Vertex::new(-1., 0.5).color(1.0, 0.0, 0.0),
-                // Vertex::new(-0.5, 0.5).color(0.0, 1.0, 0.0),
-                // Vertex::new(-0.75, 1.0).color(0.0, 0.0, 1.0),
-                // Vertex::new(1., 0.5).color(1.0, 0.0, 0.0),
-                // Vertex::new(0.5, 0.5).color(0.0, 1.0, 0.0),
-                // Vertex::new(0.75, 1.0).color(0.0, 0.0, 1.0),
-            ],
+            &square.data(),
         );
+        base.buffers().buffer_index(&queue, &square.indices());
 
+        let square = figures::Square::new(-0.5, 0.0, 0.2);
         base.buffers().buffer_vertex(
             &queue,
-            &[
-                Vertex::new(0.5, 0.5).color(1.0, 1.0, 0.0),
-                Vertex::new(0.5, -0.5).color(1.0, 0.0, 0.0),
-                Vertex::new(-0.5, -0.5).color(1.0, 0.0, 0.0),
-                Vertex::new(-0.5, 0.5).color(1.0, 0.0, 0.0),
-                // Vertex::new(-1., 0.5).color(1.0, 0.0, 0.0),
-                // Vertex::new(-0.5, 0.5).color(0.0, 1.0, 0.0),
-                // Vertex::new(-0.75, 1.0).color(0.0, 0.0, 1.0),
-                // Vertex::new(1., 0.5).color(1.0, 0.0, 0.0),
-                // Vertex::new(0.5, 0.5).color(0.0, 1.0, 0.0),
-                // Vertex::new(0.75, 1.0).color(0.0, 0.0, 1.0),
-            ],
+            &square.data(),
         );
+        base.buffers().buffer_index(&queue, &square.indices());
 
-        base.buffers().buffer_index(&queue, &[0, 1, 2, 2, 3, 0]);
+        // base.buffers().buffer_vertex(
+        //     &queue,
+        //     &[
+        //         Vertex::new(0.5, 0.5).color(1.0, 1.0, 0.0),
+        //         Vertex::new(0.5, -0.5).color(1.0, 0.0, 0.0),
+        //         Vertex::new(-0.5, -0.5).color(1.0, 0.0, 0.0),
+        //         Vertex::new(-0.5, 0.5).color(1.0, 0.0, 0.0),
+        //         // Vertex::new(-1., 0.5).color(1.0, 0.0, 0.0),
+        //         // Vertex::new(-0.5, 0.5).color(0.0, 1.0, 0.0),
+        //         // Vertex::new(-0.75, 1.0).color(0.0, 0.0, 1.0),
+        //         // Vertex::new(1., 0.5).color(1.0, 0.0, 0.0),
+        //         // Vertex::new(0.5, 0.5).color(0.0, 1.0, 0.0),
+        //         // Vertex::new(0.75, 1.0).color(0.0, 0.0, 1.0),
+        //     ],
+        // );
+
+        
 
         // base.buffers().map(&queue);
         // base.buffers().flush(&queue);

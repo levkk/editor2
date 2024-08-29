@@ -1,0 +1,3 @@
+[submodule "freetype-sys/freetype"]
+	path = freetype-sys/freetype
+	url = https://github.com/freetype/freetype

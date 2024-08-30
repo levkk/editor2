@@ -1,4 +1,3 @@
-
 use super::Vertex;
 
 pub trait Figure {

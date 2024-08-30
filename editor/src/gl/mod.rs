@@ -9,8 +9,8 @@ use std::sync::{
     Arc,
 };
 
-pub mod font;
 pub mod figures;
+pub mod font;
 pub mod scene;
 
 use figures::Figure;
@@ -117,14 +117,11 @@ impl<T> Buffers<T> {
 
     pub fn buffer_vertex(&self, queue: &Queue, data: &[Vertex]) {
         let start = self.usage.vertex.fetch_add(data.len(), Ordering::Relaxed) as u64;
-        println!("start: {}", start);
         queue.write_buffer(&self.vertex, start, bytemuck::cast_slice(data));
     }
 
     pub fn buffer_index(&self, queue: &Queue, data: &[u16]) {
         let start = self.usage.index.fetch_add(data.len(), Ordering::Relaxed) as u64;
-        println!("start: {}", start);
-        let data = data.iter().map(|d| d + start as u16).collect::<Vec<u16>>();
         queue.write_buffer(&self.index, start, bytemuck::cast_slice(&data));
     }
 
@@ -144,7 +141,7 @@ impl<T> Buffers<T> {
 struct Pipeline {
     pipeline: RenderPipeline,
     shader: ShaderModule,
-    buffers: Option<Buffers<Vertex>>,
+    buffers: Buffers<Vertex>,
 }
 
 impl Pipeline {
@@ -153,43 +150,11 @@ impl Pipeline {
     }
 
     pub fn buffers(&self) -> &Buffers<Vertex> {
-        self.buffers.as_ref().unwrap()
+        &self.buffers
     }
 }
 
 impl Pipeline {
-    fn color(device: &Device, format: TextureFormat) -> Self {
-        let shader = device.create_shader_module(include_wgsl!("color.wgsl"));
-
-        let pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
-            layout: Some(&device.create_pipeline_layout(&PipelineLayoutDescriptor::default())),
-            vertex: VertexState {
-                module: &shader,
-                entry_point: "vs_main",
-                buffers: &[],
-                compilation_options: Default::default(),
-            },
-            fragment: Some(FragmentState {
-                module: &shader,
-                entry_point: "fs_main",
-                targets: &[Some(format.into())],
-                compilation_options: Default::default(),
-            }),
-            label: None,
-            primitive: PrimitiveState::default(),
-            depth_stencil: None,
-            multisample: MultisampleState::default(),
-            multiview: None,
-            cache: None,
-        });
-
-        Self {
-            shader,
-            pipeline,
-            buffers: None,
-        }
-    }
-
     fn base(device: &Device, format: TextureFormat) -> Self {
         let shader = device.create_shader_module(include_wgsl!("base.wgsl"));
         let pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
@@ -217,7 +182,7 @@ impl Pipeline {
         Self {
             shader,
             pipeline,
-            buffers: Some(Buffers::new(device, 10_000, 65_000)),
+            buffers: Buffers::new(device, 10_000, 65_000),
         }
     }
 
@@ -285,17 +250,13 @@ impl Renderer {
 
         let format = capabilities.formats.get(0).expect("swapchain_format");
 
-        let pipeline = Pipeline::color(&device, format.clone());
         let base = Pipeline::base(&device, format.clone());
 
         let mut scene = scene::Scene::new();
         scene.add(figures::Rectangle::new(0.5, -0.134, 0.5));
         scene.add(figures::Rectangle::new(-0.5, 0.0, 0.2).green());
 
-        base.buffers().buffer_vertex(
-            &queue,
-            &scene.data(),
-        );
+        base.buffers().buffer_vertex(&queue, &scene.data());
         base.buffers().buffer_index(&queue, &scene.indices());
 
         Self {
@@ -305,7 +266,7 @@ impl Renderer {
             adapter,
             device,
             queue,
-            pipelines: vec![pipeline, base],
+            pipelines: vec![base],
             config,
         }
     }
@@ -342,7 +303,9 @@ impl Renderer {
                 timestamp_writes: None,
             });
 
-            self.pipelines[1].draw(&mut rpass);
+            for pipeline in &self.pipelines {
+                pipeline.draw(&mut rpass);
+            }
         }
 
         self.queue.submit(Some(encoder.finish()));

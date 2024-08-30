@@ -11,6 +11,9 @@ use std::sync::{
 
 pub mod font;
 pub mod figures;
+pub mod scene;
+
+use figures::Figure;
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
@@ -214,7 +217,7 @@ impl Pipeline {
         Self {
             shader,
             pipeline,
-            buffers: Some(Buffers::new(device, 3, 6)),
+            buffers: Some(Buffers::new(device, 10_000, 65_000)),
         }
     }
 
@@ -285,42 +288,15 @@ impl Renderer {
         let pipeline = Pipeline::color(&device, format.clone());
         let base = Pipeline::base(&device, format.clone());
 
-        // base.buffers().map(&queue);
-        let square = figures::Square::new(0.5, -0.134, 0.5);
+        let mut scene = scene::Scene::new();
+        scene.add(figures::Rectangle::new(0.5, -0.134, 0.5));
+        scene.add(figures::Rectangle::new(-0.5, 0.0, 0.2).green());
 
         base.buffers().buffer_vertex(
             &queue,
-            &square.data(),
+            &scene.data(),
         );
-        base.buffers().buffer_index(&queue, &square.indices());
-
-        let square = figures::Square::new(-0.5, 0.0, 0.2);
-        base.buffers().buffer_vertex(
-            &queue,
-            &square.data(),
-        );
-        base.buffers().buffer_index(&queue, &square.indices());
-
-        // base.buffers().buffer_vertex(
-        //     &queue,
-        //     &[
-        //         Vertex::new(0.5, 0.5).color(1.0, 1.0, 0.0),
-        //         Vertex::new(0.5, -0.5).color(1.0, 0.0, 0.0),
-        //         Vertex::new(-0.5, -0.5).color(1.0, 0.0, 0.0),
-        //         Vertex::new(-0.5, 0.5).color(1.0, 0.0, 0.0),
-        //         // Vertex::new(-1., 0.5).color(1.0, 0.0, 0.0),
-        //         // Vertex::new(-0.5, 0.5).color(0.0, 1.0, 0.0),
-        //         // Vertex::new(-0.75, 1.0).color(0.0, 0.0, 1.0),
-        //         // Vertex::new(1., 0.5).color(1.0, 0.0, 0.0),
-        //         // Vertex::new(0.5, 0.5).color(0.0, 1.0, 0.0),
-        //         // Vertex::new(0.75, 1.0).color(0.0, 0.0, 1.0),
-        //     ],
-        // );
-
-        
-
-        // base.buffers().map(&queue);
-        // base.buffers().flush(&queue);
+        base.buffers().buffer_index(&queue, &scene.indices());
 
         Self {
             surface,

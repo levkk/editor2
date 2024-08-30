@@ -13,6 +13,8 @@ pub mod figures;
 pub mod font;
 pub mod scene;
 
+pub use scene::Scene;
+
 use figures::Figure;
 
 #[repr(C)]
@@ -33,6 +35,16 @@ impl Vertex {
     pub fn color(mut self, r: f32, g: f32, b: f32) -> Self {
         self.color = [r, g, b];
         self
+    }
+
+    #[inline]
+    pub fn x(&self) -> f32 {
+        self.point[0]
+    }
+
+    #[inline]
+    pub fn y(&self) -> f32 {
+        self.point[1]
     }
 
     fn buffer_layout() -> wgpu::VertexBufferLayout<'static> {
@@ -93,7 +105,7 @@ impl<T> Buffers<T> {
             label: Some("base vertex"),
             size: elements as u64 * std::mem::size_of::<Self>() as u64,
             usage: BufferUsages::VERTEX | BufferUsages::COPY_DST,
-            mapped_at_creation: false,
+            mapped_at_creation: false, // to be used with Queue::write_buffer
         });
 
         // Index buffer.
@@ -104,7 +116,7 @@ impl<T> Buffers<T> {
             label: Some("base index"),
             size,
             usage: BufferUsages::INDEX | BufferUsages::COPY_DST,
-            mapped_at_creation: false,
+            mapped_at_creation: false, // to be used with Queue::write_buffer
         });
 
         Buffers {
@@ -116,13 +128,13 @@ impl<T> Buffers<T> {
     }
 
     pub fn buffer_vertex(&self, queue: &Queue, data: &[Vertex]) {
-        let start = self.usage.vertex.fetch_add(data.len(), Ordering::Relaxed) as u64;
-        queue.write_buffer(&self.vertex, start, bytemuck::cast_slice(data));
+        self.usage.vertex.store(data.len(), Ordering::Relaxed);
+        queue.write_buffer(&self.vertex, 0, bytemuck::cast_slice(data));
     }
 
     pub fn buffer_index(&self, queue: &Queue, data: &[u16]) {
-        let start = self.usage.index.fetch_add(data.len(), Ordering::Relaxed) as u64;
-        queue.write_buffer(&self.index, start, bytemuck::cast_slice(&data));
+        self.usage.index.store(data.len(), Ordering::Relaxed);
+        queue.write_buffer(&self.index, 0, bytemuck::cast_slice(&data));
     }
 
     pub fn vertex(&self) -> &Buffer {
@@ -252,13 +264,6 @@ impl Renderer {
 
         let base = Pipeline::base(&device, format.clone());
 
-        let mut scene = scene::Scene::new();
-        scene.add(figures::Rectangle::new(0.5, -0.134, 0.5));
-        scene.add(figures::Rectangle::new(-0.5, 0.0, 0.2).green());
-
-        base.buffers().buffer_vertex(&queue, &scene.data());
-        base.buffers().buffer_index(&queue, &scene.indices());
-
         Self {
             surface,
             window,
@@ -271,16 +276,27 @@ impl Renderer {
         }
     }
 
-    pub fn resize(&self, size: PhysicalSize<u32>) {
-        let mut config = self.config.clone();
+    pub fn resize(&mut self, size: PhysicalSize<u32>) {
+        let mut config = &mut self.config;
         config.width = size.width.max(1);
         config.height = size.height.max(1);
 
-        self.surface.configure(&self.device, &config);
+        self.surface.configure(&self.device, config);
         self.window.request_redraw();
     }
 
     pub fn draw(&self) {
+        let mut scene = scene::Scene::new();
+        scene.add(figures::Rectangle::new(0.5, -0.134, 0.5, 0.2));
+        scene.add(figures::Rectangle::new(-0.5, 0.0, 0.2, 0.5).green());
+
+        self.pipelines[0]
+            .buffers()
+            .buffer_vertex(&self.queue, &scene.data());
+        self.pipelines[0]
+            .buffers()
+            .buffer_index(&self.queue, &scene.indices());
+
         let frame = self.surface.get_current_texture().expect("texture");
         let view = frame.texture.create_view(&TextureViewDescriptor::default());
         let mut encoder = self
@@ -314,5 +330,9 @@ impl Renderer {
             self.window.set_visible(true);
             self.window.request_redraw();
         }
+    }
+
+    pub fn config(&self) -> SurfaceConfiguration {
+        self.config.clone()
     }
 }

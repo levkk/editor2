@@ -9,6 +9,8 @@ use winit::{
 mod gl;
 use gl::Renderer;
 
+mod compositor;
+
 struct App {
     renderer: Option<Renderer>,
 }
@@ -38,7 +40,7 @@ impl ApplicationHandler for App {
             }
             WindowEvent::MouseWheel { delta: _, .. } => {}
             WindowEvent::Resized(size) => {
-                if let Some(ref renderer) = self.renderer {
+                if let Some(ref mut renderer) = self.renderer {
                     renderer.resize(size);
                 }
             }

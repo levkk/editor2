@@ -25,12 +25,13 @@ impl Figure for Rectangle {
 }
 
 impl Rectangle {
-    pub fn new(x: f32, y: f32, height: f32) -> Rectangle {
-        let half = height / 2.0;
-        let x1 = x - half;
-        let x2 = x + half;
-        let y1 = y - half;
-        let y2 = y + half;
+    pub fn new(x: f32, y: f32, height: f32, width: f32) -> Rectangle {
+        let halfH = height / 2.;
+        let halfW = width / 2.;
+        let x1 = x - halfW;
+        let x2 = x + halfW;
+        let y1 = y - halfH;
+        let y2 = y + halfH;
 
         Rectangle {
             p0: Vertex::new(x1, y1),
